@@ -302,8 +302,33 @@ class ImageApiGenerator(ImageGeneratorBase):
         # 解析响应
         if "choices" in result and len(result["choices"]) > 0:
             choice = result["choices"][0]
-            if "message" in choice and "content" in choice["message"]:
-                content = choice["message"]["content"]
+            message = choice.get("message", {})
+            
+            # 优先检查 images 字段（Gemini 3 图片生成模型的返回格式）
+            if "images" in message and message["images"]:
+                images = message["images"]
+                if len(images) > 0:
+                    image_data = images[0]
+                    # 支持 {"image_url": {"url": "data:image/..."}} 格式
+                    if isinstance(image_data, dict):
+                        url = None
+                        if "image_url" in image_data and "url" in image_data["image_url"]:
+                            url = image_data["image_url"]["url"]
+                        elif "url" in image_data:
+                            url = image_data["url"]
+                        
+                        if url:
+                            if url.startswith("data:image"):
+                                logger.info("从 message.images 提取到 Base64 图片数据")
+                                base64_data = url.split(",", 1)[1]
+                                return base64.b64decode(base64_data)
+                            elif url.startswith("http"):
+                                logger.info("从 message.images 提取到图片 URL")
+                                return self._download_image(url)
+            
+            # 然后检查 content 字段
+            if "content" in message and message["content"]:
+                content = message["content"]
 
                 if isinstance(content, str):
                     # Markdown 图片链接: ![xxx](url)
